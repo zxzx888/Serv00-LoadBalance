@@ -22,39 +22,97 @@ async function handleRequest(request, env) {
   const servers = getServers(env);
 
   if (!servers.length) {
-    return new Response('No servers configured', {
-      status: 500
-    });
+    return new Response(
+      'No servers configured',
+      { status: 500 }
+    );
   }
 
-  // =========================
-  // WebSocket
-  // =========================
+  const timeoutMs = Number(
+    env.TIMEOUT || 5000
+  );
 
-  const upgrade = request.headers.get('Upgrade');
+  const wsTimeoutMs = Number(
+    env.WS_TIMEOUT || 15000
+  );
+
+  // ===================================
+  // WebSocket
+  // ===================================
+
+  const upgrade =
+    request.headers.get('Upgrade');
 
   if (
     upgrade &&
-    upgrade.toLowerCase() === 'websocket'
+    upgrade.toLowerCase() ===
+      'websocket'
   ) {
 
-    const server = randomServer(servers);
+    const server =
+      randomServer(servers);
 
-    const url = new URL(request.url);
+    const url = new URL(
+      request.url
+    );
 
     url.host = server;
 
-    return fetch(url.toString(), {
-      method: request.method,
-      headers: request.headers,
-      body: request.body
-    });
+    const controller =
+      new AbortController();
+
+    const timeout = setTimeout(
+      () => controller.abort(),
+      wsTimeoutMs
+    );
+
+    try {
+
+      const response =
+        await fetch(
+          url.toString(),
+          {
+            method:
+              request.method,
+            headers:
+              request.headers,
+            body:
+              request.body,
+            signal:
+              controller.signal
+          }
+        );
+
+      clearTimeout(timeout);
+
+      if (
+        response.status !== 101 ||
+        !response.webSocket
+      ) {
+        return new Response(
+          `WebSocket upgrade failed (${response.status})`,
+          { status: 502 }
+        );
+      }
+
+      return response;
+
+    } catch (err) {
+
+      clearTimeout(timeout);
+
+      return new Response(
+        'WebSocket connection failed',
+        { status: 502 }
+      );
+
+    }
   }
 
-  // =========================
-  // 带 Body 的请求
-  // 直接流式转发
-  // =========================
+  // ===================================
+  // POST / PUT / PATCH ...
+  // 流式单节点转发
+  // ===================================
 
   const hasBody =
     request.method !== 'GET' &&
@@ -62,29 +120,39 @@ async function handleRequest(request, env) {
 
   if (hasBody) {
 
-    const server = randomServer(servers);
+    const server =
+      randomServer(servers);
 
-    const controller = new AbortController();
+    const controller =
+      new AbortController();
 
-    const timeout = setTimeout(() => {
-      controller.abort();
-    }, Number(env.TIMEOUT || 5000));
+    const timeout = setTimeout(
+      () => controller.abort(),
+      timeoutMs
+    );
 
     try {
 
-      const url = new URL(request.url);
+      const url = new URL(
+        request.url
+      );
 
       url.host = server;
 
-      const response = await fetch(
-        url.toString(),
-        {
-          method: request.method,
-          headers: request.headers,
-          body: request.body,
-          signal: controller.signal
-        }
-      );
+      const response =
+        await fetch(
+          url.toString(),
+          {
+            method:
+              request.method,
+            headers:
+              request.headers,
+            body:
+              request.body,
+            signal:
+              controller.signal
+          }
+        );
 
       clearTimeout(timeout);
 
@@ -96,40 +164,51 @@ async function handleRequest(request, env) {
 
       return new Response(
         'Server failed',
-        {
-          status: 502
-        }
+        { status: 502 }
       );
 
     }
   }
 
-  // =========================
-  // GET / HEAD 全竞速
-  // =========================
+  // ===================================
+  // GET / HEAD
+  // 全节点竞速
+  // ===================================
 
   const controllers = [];
   const requests = [];
 
   for (const server of servers) {
 
-    const controller = new AbortController();
+    const controller =
+      new AbortController();
 
-    controllers.push(controller);
+    controllers.push(
+      controller
+    );
 
-    const timeout = setTimeout(() => {
-      controller.abort();
-    }, Number(env.TIMEOUT || 5000));
+    const timeout =
+      setTimeout(() => {
+        controller.abort();
+      }, timeoutMs);
 
-    const url = new URL(request.url);
+    const url = new URL(
+      request.url
+    );
 
     url.host = server;
 
-    const req = fetch(url.toString(), {
-      method: request.method,
-      headers: request.headers,
-      signal: controller.signal
-    })
+    const req = fetch(
+      url.toString(),
+      {
+        method:
+          request.method,
+        headers:
+          request.headers,
+        signal:
+          controller.signal
+      }
+    )
       .then(response => {
 
         clearTimeout(timeout);
@@ -141,7 +220,9 @@ async function handleRequest(request, env) {
         }
 
         for (const c of controllers) {
-          if (c !== controller) {
+          if (
+            c !== controller
+          ) {
             c.abort();
           }
         }
@@ -162,15 +243,15 @@ async function handleRequest(request, env) {
 
   try {
 
-    return await Promise.any(requests);
+    return await Promise.any(
+      requests
+    );
 
   } catch {
 
     return new Response(
       'All servers failed',
-      {
-        status: 502
-      }
+      { status: 502 }
     );
 
   }
