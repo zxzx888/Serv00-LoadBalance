@@ -27,7 +27,10 @@ async function handleRequest(request, env) {
     });
   }
 
-  // websocket 请求
+  // =========================
+  // WebSocket
+  // =========================
+
   const upgrade = request.headers.get('Upgrade');
 
   if (
@@ -35,7 +38,6 @@ async function handleRequest(request, env) {
     upgrade.toLowerCase() === 'websocket'
   ) {
 
-    // websocket 不 race
     const server = randomServer(servers);
 
     const url = new URL(request.url);
@@ -49,12 +51,62 @@ async function handleRequest(request, env) {
     });
   }
 
-  // 普通 HTTP 才竞速
-  const body =
-    request.method === 'GET' ||
-    request.method === 'HEAD'
-      ? undefined
-      : await request.arrayBuffer();
+  // =========================
+  // 带 Body 的请求
+  // 直接流式转发
+  // =========================
+
+  const hasBody =
+    request.method !== 'GET' &&
+    request.method !== 'HEAD';
+
+  if (hasBody) {
+
+    const server = randomServer(servers);
+
+    const controller = new AbortController();
+
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, Number(env.TIMEOUT || 5000));
+
+    try {
+
+      const url = new URL(request.url);
+
+      url.host = server;
+
+      const response = await fetch(
+        url.toString(),
+        {
+          method: request.method,
+          headers: request.headers,
+          body: request.body,
+          signal: controller.signal
+        }
+      );
+
+      clearTimeout(timeout);
+
+      return response;
+
+    } catch (err) {
+
+      clearTimeout(timeout);
+
+      return new Response(
+        'Server failed',
+        {
+          status: 502
+        }
+      );
+
+    }
+  }
+
+  // =========================
+  // GET / HEAD 全竞速
+  // =========================
 
   const controllers = [];
   const requests = [];
@@ -76,7 +128,6 @@ async function handleRequest(request, env) {
     const req = fetch(url.toString(), {
       method: request.method,
       headers: request.headers,
-      body,
       signal: controller.signal
     })
       .then(response => {
@@ -89,7 +140,6 @@ async function handleRequest(request, env) {
           );
         }
 
-        // abort losers
         for (const c of controllers) {
           if (c !== controller) {
             c.abort();
@@ -116,9 +166,12 @@ async function handleRequest(request, env) {
 
   } catch {
 
-    return new Response('All servers failed', {
-      status: 502
-    });
+    return new Response(
+      'All servers failed',
+      {
+        status: 502
+      }
+    );
 
   }
 }
