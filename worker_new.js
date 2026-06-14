@@ -213,11 +213,12 @@ async function handleRequest(request, env) {
 
         clearTimeout(timeout);
 
-      if (!response.ok) {
-        
-          throw new Error(`HTTP ${response.status}`);
-}
-        
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}`
+          );
+        }
+  
         for (const c of controllers) {
           if (
             c !== controller
