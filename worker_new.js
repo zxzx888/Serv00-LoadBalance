@@ -213,12 +213,15 @@ async function handleRequest(request, env) {
 
         clearTimeout(timeout);
 
-  if ([502, 503, 504].includes(response.status)) {
-    throw new Error(
+      if ([502, 503, 504].includes(
+        response.status)
+         ) 
+        {
+      throw new Error(
       `HTTP ${response.status}`
     );
-  }
-
+        }
+        
         for (const c of controllers) {
           if (
             c !== controller
