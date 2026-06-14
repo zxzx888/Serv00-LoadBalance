@@ -218,7 +218,7 @@ async function handleRequest(request, env) {
             `HTTP ${response.status}`
           );
         }
-  
+
         for (const c of controllers) {
           if (
             c !== controller
